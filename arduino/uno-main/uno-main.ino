@@ -1,103 +1,132 @@
-#include <Wire.h>
+﻿#include <Wire.h>
 #include <U8g2lib.h>
 
 U8G2_SSD1309_128X64_NONAME0_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ 9);
 
-const int RED_LED_PIN = 7;
-const int GREEN_LED_PIN = 2;
-const int HEART_PIN = A0;
-const int SOUND_A_PIN = A1;
-const int SOUND_B_PIN = A2;
-const int SOUND_C_PIN = A3;
-const int TILT_PIN = 3;
-const int MANUAL_BUTTON_PIN = 4;
-const int MOTOR_PIN = 5;
-
-const bool ENABLE_HEART_SENSOR = true;
-const bool ENABLE_SOUND_SENSORS = false;
-const bool ENABLE_TILT_SENSOR = false;
-const bool ENABLE_MANUAL_BUTTON = false;
-const bool ENABLE_MOTOR = false;
+const int HEART_A_PIN = A0;
+const int HEART_B_PIN = A1;
+const int BUTTON_A_PIN = 2;
+const int BUTTON_B_PIN = 3;
+const int MOTOR_A_PIN = 5;
+const int MOTOR_B_PIN = 6;
+const int LED_A_PIN = 7;
+const int LED_B_PIN = 8;
 
 const int HEART_ALERT_THRESHOLD = 700;
-const int SOUND_ALERT_THRESHOLD = 700;
-
 const unsigned long STATUS_INTERVAL_MS = 1000;
-const unsigned long CALL_OUTPUT_MS = 5000;
+const unsigned long CALL_OUTPUT_MS = 1000;
+const unsigned long DISPLAY_ROTATE_MS = 1800;
 
 char serialLine[128];
 size_t serialLineLen = 0;
 
-bool redLedState = false;
-bool greenLedState = true;
-bool motorState = false;
-bool heartAlertActive = false;
-bool tiltAlertActive = false;
-bool manualPressedState = false;
-bool callOutputActive = false;
+bool ledStateA = false;
+bool ledStateB = false;
+bool motorStateA = false;
+bool motorStateB = false;
+bool heartAlertActiveA = false;
+bool heartAlertActiveB = false;
+bool buttonPressedA = false;
+bool buttonPressedB = false;
+bool callActiveA = false;
+bool callActiveB = false;
+bool displayHeartPage = true;
 
 unsigned long lastStatusAt = 0;
-unsigned long callOutputUntil = 0;
+unsigned long displaySwapAt = 0;
+unsigned long callOutputUntilA = 0;
+unsigned long callOutputUntilB = 0;
 
-void setOutputs(bool redOn, bool greenOn, bool motorOn) {
-  redLedState = redOn;
-  greenLedState = greenOn;
-  motorState = motorOn && ENABLE_MOTOR;
-
-  digitalWrite(RED_LED_PIN, redLedState ? HIGH : LOW);
-  digitalWrite(GREEN_LED_PIN, greenLedState ? HIGH : LOW);
-
-  if (ENABLE_MOTOR) {
-    digitalWrite(MOTOR_PIN, motorState ? HIGH : LOW);
-  }
+void applyOutputs() {
+  digitalWrite(LED_A_PIN, ledStateA ? HIGH : LOW);
+  digitalWrite(LED_B_PIN, ledStateB ? HIGH : LOW);
+  digitalWrite(MOTOR_A_PIN, motorStateA ? HIGH : LOW);
+  digitalWrite(MOTOR_B_PIN, motorStateB ? HIGH : LOW);
 }
 
-void showDisplay(const char* topText, int heartRaw, bool fingerDetected) {
-  char line[24];
+void showHeartDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool fingerDetectedB) {
+  char lineA[28];
+  char lineB[28];
 
   u8g2.firstPage();
   do {
     u8g2.setFont(u8g2_font_6x12_tr);
-    u8g2.drawStr(0, 12, topText);
-
-    if (fingerDetected) {
-      snprintf(line, sizeof(line), "RAW: %d", heartRaw);
-      u8g2.drawStr(0, 32, line);
-      u8g2.drawStr(0, 52, "FINGER OK");
-    } else {
-      u8g2.drawStr(0, 32, "RAW: --");
-      u8g2.drawStr(0, 52, "NO FINGER");
-    }
+    u8g2.drawStr(0, 12, "HEART STATUS");
+    snprintf(lineA, sizeof(lineA), "A %4d %s", fingerDetectedA ? heartRawA : 0, fingerDetectedA ? "OK" : "--");
+    snprintf(lineB, sizeof(lineB), "B %4d %s", fingerDetectedB ? heartRawB : 0, fingerDetectedB ? "OK" : "--");
+    u8g2.drawStr(0, 32, lineA);
+    u8g2.drawStr(0, 52, lineB);
   } while (u8g2.nextPage());
 }
 
-void emitStatus(int heartRaw, bool fingerDetected, int soundA, int soundB, int soundC) {
+void showCallDisplay() {
+  char lineA[24];
+  char lineB[24];
+
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_6x12_tr);
+    u8g2.drawStr(0, 12, "CALL / BUTTON");
+    snprintf(lineA, sizeof(lineA), "A BTN:%s CALL:%s", buttonPressedA ? "ON" : "OFF", callActiveA ? "ON" : "OFF");
+    snprintf(lineB, sizeof(lineB), "B BTN:%s CALL:%s", buttonPressedB ? "ON" : "OFF", callActiveB ? "ON" : "OFF");
+    u8g2.drawStr(0, 32, lineA);
+    u8g2.drawStr(0, 52, lineB);
+  } while (u8g2.nextPage());
+}
+
+void showCallOverlay(const char* worker) {
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_6x12_tr);
+    u8g2.drawStr(0, 14, "WORKER CALL");
+    u8g2.setFont(u8g2_font_logisoso24_tr);
+    u8g2.drawStr(16, 52, worker);
+  } while (u8g2.nextPage());
+}
+
+void refreshDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool fingerDetectedB) {
+  if (callActiveA) {
+    showCallOverlay("A");
+    return;
+  }
+  if (callActiveB) {
+    showCallOverlay("B");
+    return;
+  }
+  if (displayHeartPage) {
+    showHeartDisplay(heartRawA, fingerDetectedA, heartRawB, fingerDetectedB);
+  } else {
+    showCallDisplay();
+  }
+}
+
+void emitStatus(int heartRawA, bool fingerDetectedA, int heartRawB, bool fingerDetectedB) {
   Serial.print("{\"kind\":\"status\",\"device\":\"uno-main\"");
-  Serial.print(",\"heartRaw\":");
-  Serial.print(fingerDetected ? heartRaw : 0);
-  Serial.print(",\"fingerDetected\":");
-  Serial.print(fingerDetected ? "true" : "false");
-  Serial.print(",\"redLed\":");
-  Serial.print(redLedState ? "true" : "false");
-  Serial.print(",\"greenLed\":");
-  Serial.print(greenLedState ? "true" : "false");
-  Serial.print(",\"manualPressed\":");
-  Serial.print(manualPressedState ? "true" : "false");
-  Serial.print(",\"soundA\":");
-  Serial.print(soundA);
-  Serial.print(",\"soundB\":");
-  Serial.print(soundB);
-  Serial.print(",\"soundC\":");
-  Serial.print(soundC);
-  Serial.print(",\"tiltAlert\":");
-  Serial.print(tiltAlertActive ? "true" : "false");
-  Serial.print(",\"motorActive\":");
-  Serial.print(motorState ? "true" : "false");
+  Serial.print(",\"heartRawA\":");
+  Serial.print(fingerDetectedA ? heartRawA : 0);
+  Serial.print(",\"heartRawB\":");
+  Serial.print(fingerDetectedB ? heartRawB : 0);
+  Serial.print(",\"fingerA\":");
+  Serial.print(fingerDetectedA ? "true" : "false");
+  Serial.print(",\"fingerB\":");
+  Serial.print(fingerDetectedB ? "true" : "false");
+  Serial.print(",\"buttonPressedA\":");
+  Serial.print(buttonPressedA ? "true" : "false");
+  Serial.print(",\"buttonPressedB\":");
+  Serial.print(buttonPressedB ? "true" : "false");
+  Serial.print(",\"callActiveA\":");
+  Serial.print(callActiveA ? "true" : "false");
+  Serial.print(",\"callActiveB\":");
+  Serial.print(callActiveB ? "true" : "false");
   Serial.println("}");
 }
 
-void emitHeartEvent(int heartRaw, bool fingerDetected, bool active) {
-  Serial.print("{\"kind\":\"event\",\"eventType\":\"heart_abnormal\",\"worker\":\"A\",\"heartRaw\":");
+void emitHeartEvent(const char* worker, int heartRaw, bool fingerDetected, bool active) {
+  Serial.print("{\"kind\":\"event\",\"eventType\":\"heart_abnormal\",\"worker\":\"");
+  Serial.print(worker);
+  Serial.print("\",\"value\":");
+  Serial.print(fingerDetected ? heartRaw : 0);
+  Serial.print(",\"heartRaw\":");
   Serial.print(fingerDetected ? heartRaw : 0);
   Serial.print(",\"threshold\":");
   Serial.print(HEART_ALERT_THRESHOLD);
@@ -106,34 +135,26 @@ void emitHeartEvent(int heartRaw, bool fingerDetected, bool active) {
   Serial.println("}");
 }
 
-void emitManualButtonEvent(bool active) {
-  Serial.print("{\"kind\":\"event\",\"eventType\":\"worker_call_button\",\"source\":\"manual_button\",\"active\":");
+void emitManualButtonEvent(const char* worker, bool active) {
+  Serial.print("{\"kind\":\"event\",\"eventType\":\"worker_call_button\",\"worker\":\"");
+  Serial.print(worker);
+  Serial.print("\",\"source\":\"manual_button_");
+  Serial.print(worker);
+  Serial.print("\",\"active\":");
   Serial.print(active ? "true" : "false");
   Serial.println("}");
 }
 
-void emitNoiseEvent(const char* zone, int value, bool active) {
-  Serial.print("{\"kind\":\"event\",\"eventType\":\"noise_abnormal\",\"zone\":\"");
-  Serial.print(zone);
-  Serial.print("\",\"value\":");
-  Serial.print(value);
-  Serial.print(",\"threshold\":");
-  Serial.print(SOUND_ALERT_THRESHOLD);
-  Serial.print(",\"active\":");
-  Serial.print(active ? "true" : "false");
-  Serial.println("}");
-}
-
-void emitTiltEvent(bool active) {
-  Serial.print("{\"kind\":\"event\",\"eventType\":\"fall_detected\",\"worker\":\"A\",\"active\":");
-  Serial.print(active ? "true" : "false");
-  Serial.println("}");
-}
-
-void emitCommandApplied(const char* commandName) {
+void emitCommandApplied(const char* commandName, const char* worker) {
   Serial.print("{\"kind\":\"event\",\"eventType\":\"command_applied\",\"command\":\"");
   Serial.print(commandName);
-  Serial.println("\"}");
+  Serial.print("\"");
+  if (worker != NULL) {
+    Serial.print(",\"worker\":\"");
+    Serial.print(worker);
+    Serial.print("\"");
+  }
+  Serial.println("}");
 }
 
 void emitError(const char* message) {
@@ -146,51 +167,41 @@ bool containsToken(const char* haystack, const char* needle) {
   return strstr(haystack, needle) != NULL;
 }
 
-void applyWorkerCall(const char* worker) {
-  callOutputActive = true;
-  callOutputUntil = millis() + CALL_OUTPUT_MS;
-  setOutputs(true, false, true);
-  showDisplay(strcmp(worker, "B") == 0 ? "CALL B" : "CALL A", analogRead(HEART_PIN), analogRead(HEART_PIN) > 500);
+void setWorkerCallState(const char* worker, bool active) {
+  if (strcmp(worker, "B") == 0) {
+    callActiveB = active;
+    ledStateB = active;
+    motorStateB = active;
+    callOutputUntilB = active ? millis() + CALL_OUTPUT_MS : 0;
+  } else {
+    callActiveA = active;
+    ledStateA = active;
+    motorStateA = active;
+    callOutputUntilA = active ? millis() + CALL_OUTPUT_MS : 0;
+  }
+  applyOutputs();
 }
 
-void clearCallOutputs() {
-  callOutputActive = false;
-  callOutputUntil = 0;
-  setOutputs(false, true, false);
+void applyWorkerCall(const char* worker) {
+  setWorkerCallState(worker, true);
 }
 
 void handleCommand(const char* line) {
   if (containsToken(line, "\"cmd\":\"call_worker\"")) {
     if (containsToken(line, "\"worker\":\"B\"")) {
       applyWorkerCall("B");
+      emitCommandApplied("call_worker", "B");
     } else {
       applyWorkerCall("A");
+      emitCommandApplied("call_worker", "A");
     }
-    emitCommandApplied("call_worker");
     return;
   }
 
   if (containsToken(line, "\"cmd\":\"clear_outputs\"")) {
-    clearCallOutputs();
-    emitCommandApplied("clear_outputs");
-    return;
-  }
-
-  if (containsToken(line, "\"cmd\":\"set_indicator\"")) {
-    bool redRequested = containsToken(line, "\"color\":\"red\"");
-    bool greenRequested = containsToken(line, "\"color\":\"green\"");
-    bool turnOn = containsToken(line, "\"state\":\"on\"");
-
-    if (redRequested) {
-      setOutputs(turnOn, greenLedState && !turnOn, motorState);
-    } else if (greenRequested) {
-      setOutputs(redLedState && !turnOn, turnOn, motorState);
-    } else {
-      emitError("unknown indicator color");
-      return;
-    }
-
-    emitCommandApplied("set_indicator");
+    setWorkerCallState("A", false);
+    setWorkerCallState("B", false);
+    emitCommandApplied("clear_outputs", NULL);
     return;
   }
 
@@ -224,20 +235,12 @@ void readSerialCommands() {
 }
 
 void setupFeaturePins() {
-  pinMode(RED_LED_PIN, OUTPUT);
-  pinMode(GREEN_LED_PIN, OUTPUT);
-
-  if (ENABLE_MOTOR) {
-    pinMode(MOTOR_PIN, OUTPUT);
-  }
-
-  if (ENABLE_TILT_SENSOR) {
-    pinMode(TILT_PIN, INPUT_PULLUP);
-  }
-
-  if (ENABLE_MANUAL_BUTTON) {
-    pinMode(MANUAL_BUTTON_PIN, INPUT_PULLUP);
-  }
+  pinMode(LED_A_PIN, OUTPUT);
+  pinMode(LED_B_PIN, OUTPUT);
+  pinMode(MOTOR_A_PIN, OUTPUT);
+  pinMode(MOTOR_B_PIN, OUTPUT);
+  pinMode(BUTTON_A_PIN, INPUT_PULLUP);
+  pinMode(BUTTON_B_PIN, INPUT_PULLUP);
 }
 
 void setup() {
@@ -246,66 +249,61 @@ void setup() {
   u8g2.begin();
 
   setupFeaturePins();
-  setOutputs(false, true, false);
-  showDisplay("READY", 0, false);
+  applyOutputs();
+  refreshDisplay(0, false, 0, false);
 }
 
 void loop() {
   readSerialCommands();
 
-  int heartRaw = ENABLE_HEART_SENSOR ? analogRead(HEART_PIN) : 0;
-  bool fingerDetected = heartRaw > 500;
+  int heartRawA = analogRead(HEART_A_PIN);
+  int heartRawB = analogRead(HEART_B_PIN);
+  bool fingerDetectedA = heartRawA > 500;
+  bool fingerDetectedB = heartRawB > 500;
 
-  if (!callOutputActive) {
-    showDisplay(greenLedState ? "GREEN" : "RED", heartRaw, fingerDetected);
+  if (millis() - displaySwapAt >= DISPLAY_ROTATE_MS) {
+    displaySwapAt = millis();
+    displayHeartPage = !displayHeartPage;
   }
 
-  bool nextHeartAlert = ENABLE_HEART_SENSOR && fingerDetected && heartRaw >= HEART_ALERT_THRESHOLD;
-  if (nextHeartAlert != heartAlertActive) {
-    heartAlertActive = nextHeartAlert;
-    emitHeartEvent(heartRaw, fingerDetected, heartAlertActive);
+  refreshDisplay(heartRawA, fingerDetectedA, heartRawB, fingerDetectedB);
+
+  bool nextHeartAlertA = fingerDetectedA && heartRawA >= HEART_ALERT_THRESHOLD;
+  if (nextHeartAlertA != heartAlertActiveA) {
+    heartAlertActiveA = nextHeartAlertA;
+    emitHeartEvent("A", heartRawA, fingerDetectedA, heartAlertActiveA);
   }
 
-  int soundA = 0;
-  int soundB = 0;
-  int soundC = 0;
-
-  if (ENABLE_SOUND_SENSORS) {
-    soundA = analogRead(SOUND_A_PIN);
-    soundB = analogRead(SOUND_B_PIN);
-    soundC = analogRead(SOUND_C_PIN);
-
-    if (soundA >= SOUND_ALERT_THRESHOLD) emitNoiseEvent("A", soundA, true);
-    if (soundB >= SOUND_ALERT_THRESHOLD) emitNoiseEvent("B", soundB, true);
-    if (soundC >= SOUND_ALERT_THRESHOLD) emitNoiseEvent("C", soundC, true);
+  bool nextHeartAlertB = fingerDetectedB && heartRawB >= HEART_ALERT_THRESHOLD;
+  if (nextHeartAlertB != heartAlertActiveB) {
+    heartAlertActiveB = nextHeartAlertB;
+    emitHeartEvent("B", heartRawB, fingerDetectedB, heartAlertActiveB);
   }
 
-  if (ENABLE_TILT_SENSOR) {
-    bool nextTiltAlert = digitalRead(TILT_PIN) == LOW;
-    if (nextTiltAlert != tiltAlertActive) {
-      tiltAlertActive = nextTiltAlert;
-      emitTiltEvent(tiltAlertActive);
-    }
+  bool nextButtonPressedA = digitalRead(BUTTON_A_PIN) == LOW;
+  if (nextButtonPressedA != buttonPressedA) {
+    buttonPressedA = nextButtonPressedA;
+    emitManualButtonEvent("A", buttonPressedA);
   }
 
-  if (ENABLE_MANUAL_BUTTON) {
-    bool nextManualPressed = digitalRead(MANUAL_BUTTON_PIN) == LOW;
-    if (nextManualPressed != manualPressedState) {
-      manualPressedState = nextManualPressed;
-      emitManualButtonEvent(manualPressedState);
-    }
+  bool nextButtonPressedB = digitalRead(BUTTON_B_PIN) == LOW;
+  if (nextButtonPressedB != buttonPressedB) {
+    buttonPressedB = nextButtonPressedB;
+    emitManualButtonEvent("B", buttonPressedB);
   }
 
-  if (callOutputActive && millis() >= callOutputUntil) {
-    clearCallOutputs();
+  if (callActiveA && millis() >= callOutputUntilA) {
+    setWorkerCallState("A", false);
+  }
+
+  if (callActiveB && millis() >= callOutputUntilB) {
+    setWorkerCallState("B", false);
   }
 
   if (millis() - lastStatusAt >= STATUS_INTERVAL_MS) {
     lastStatusAt = millis();
-    emitStatus(heartRaw, fingerDetected, soundA, soundB, soundC);
+    emitStatus(heartRawA, fingerDetectedA, heartRawB, fingerDetectedB);
   }
 
   delay(30);
 }
-
-
