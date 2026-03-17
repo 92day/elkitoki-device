@@ -8,8 +8,8 @@ const unsigned long STATUS_INTERVAL_MS = 500;
 const unsigned long EVENT_COOLDOWN_MS = 2500;
 
 const float FALL_TILT_THRESHOLD_DEG = 55.0f;
-const int NOISE_CAUTION_DB = 68;
-const int NOISE_DANGER_DB = 78;
+const int NOISE_CAUTION_SCORE = 40;
+const int NOISE_DANGER_SCORE = 70;
 
 unsigned long lastStatusAt = 0;
 unsigned long lastTiltEventAt = 0;
@@ -23,11 +23,11 @@ bool noiseAlertA = false;
 bool noiseAlertB = false;
 bool noiseAlertC = false;
 
-int rawToDecibel(int rawValue) {
+int rawToNoiseScore(int rawValue) {
   const int clamped = constrain(rawValue, 0, 1023);
   const float normalized = clamped / 1023.0f;
-  const float scaled = 35.0f + powf(normalized, 0.58f) * 65.0f;
-  return (int)(scaled + 0.5f);
+  const float scaled = 1.0f + powf(normalized, 0.58f) * 99.0f;
+  return constrain((int)(scaled + 0.5f), 1, 100);
 }
 
 void emitStatus(int soundA, int soundB, int soundC, float pitch, float roll, bool tiltAlert) {
@@ -74,21 +74,21 @@ void emitFallEvent(float pitch, float roll) {
 void updateNoiseAlerts(int soundA, int soundB, int soundC) {
   const unsigned long now = millis();
 
-  noiseAlertA = soundA >= NOISE_CAUTION_DB;
-  noiseAlertB = soundB >= NOISE_CAUTION_DB;
-  noiseAlertC = soundC >= NOISE_CAUTION_DB;
+  noiseAlertA = soundA >= NOISE_CAUTION_SCORE;
+  noiseAlertB = soundB >= NOISE_CAUTION_SCORE;
+  noiseAlertC = soundC >= NOISE_CAUTION_SCORE;
 
-  if (soundA >= NOISE_DANGER_DB && now - lastNoiseEventAtA >= EVENT_COOLDOWN_MS) {
+  if (soundA >= NOISE_DANGER_SCORE && now - lastNoiseEventAtA >= EVENT_COOLDOWN_MS) {
     emitNoiseEvent("A", soundA);
     lastNoiseEventAtA = now;
   }
 
-  if (soundB >= NOISE_DANGER_DB && now - lastNoiseEventAtB >= EVENT_COOLDOWN_MS) {
+  if (soundB >= NOISE_DANGER_SCORE && now - lastNoiseEventAtB >= EVENT_COOLDOWN_MS) {
     emitNoiseEvent("B", soundB);
     lastNoiseEventAtB = now;
   }
 
-  if (soundC >= NOISE_DANGER_DB && now - lastNoiseEventAtC >= EVENT_COOLDOWN_MS) {
+  if (soundC >= NOISE_DANGER_SCORE && now - lastNoiseEventAtC >= EVENT_COOLDOWN_MS) {
     emitNoiseEvent("C", soundC);
     lastNoiseEventAtC = now;
   }
@@ -125,9 +125,9 @@ void loop() {
   const float pitch = atan2f(x, sqrtf(y * y + z * z)) * 180.0f / PI;
   const float roll = atan2f(y, z) * 180.0f / PI;
 
-  const int soundA = rawToDecibel(analogRead(SOUND_A_PIN));
-  const int soundB = rawToDecibel(analogRead(SOUND_B_PIN));
-  const int soundC = rawToDecibel(analogRead(SOUND_C_PIN));
+  const int soundA = rawToNoiseScore(analogRead(SOUND_A_PIN));
+  const int soundB = rawToNoiseScore(analogRead(SOUND_B_PIN));
+  const int soundC = rawToNoiseScore(analogRead(SOUND_C_PIN));
 
   updateNoiseAlerts(soundA, soundB, soundC);
   updateTiltAlert(pitch, roll);
@@ -140,3 +140,6 @@ void loop() {
 
   delay(30);
 }
+
+
+
