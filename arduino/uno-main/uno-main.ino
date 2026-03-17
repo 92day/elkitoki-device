@@ -183,6 +183,8 @@ void setWorkerCallState(const char* worker, bool active) {
 }
 
 void applyWorkerCall(const char* worker) {
+  setWorkerCallState("A", false);
+  setWorkerCallState("B", false);
   setWorkerCallState(worker, true);
 }
 
@@ -307,3 +309,4 @@ void loop() {
 
   delay(30);
 }
+
