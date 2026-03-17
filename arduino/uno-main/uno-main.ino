@@ -285,12 +285,18 @@ void loop() {
   bool nextButtonPressedA = digitalRead(BUTTON_A_PIN) == LOW;
   if (nextButtonPressedA != buttonPressedA) {
     buttonPressedA = nextButtonPressedA;
+    if (buttonPressedA) {
+      applyWorkerCall("A");
+    }
     emitManualButtonEvent("A", buttonPressedA);
   }
 
   bool nextButtonPressedB = digitalRead(BUTTON_B_PIN) == LOW;
   if (nextButtonPressedB != buttonPressedB) {
     buttonPressedB = nextButtonPressedB;
+    if (buttonPressedB) {
+      applyWorkerCall("B");
+    }
     emitManualButtonEvent("B", buttonPressedB);
   }
 
