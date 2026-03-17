@@ -1,27 +1,28 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 
 const { SerialPort } = require('serialport');
 const { ReadlineParser } = require('@serialport/parser-readline');
 
-const SERIAL_PORT = process.env.SERIAL_PORT || 'COM3';
-const SERIAL_BAUDRATE = Number(process.env.SERIAL_BAUDRATE || 115200);
 const SERVER_BASE = (process.env.SERVER_BASE || 'http://127.0.0.1:8000').replace(/\/$/, '');
-const DEVICE_NAME = process.env.DEVICE_NAME || 'uno-main';
 const BRIDGE_ID = process.env.BRIDGE_ID || 'laptop-bridge-1';
 const COMMAND_POLL_MS = Number(process.env.COMMAND_POLL_MS || 1500);
+
+const UNO_PORT = process.env.UNO_SERIAL_PORT || process.env.SERIAL_PORT || 'COM3';
+const UNO_BAUDRATE = Number(process.env.UNO_SERIAL_BAUDRATE || process.env.SERIAL_BAUDRATE || 115200);
+const UNO_DEVICE_NAME = process.env.UNO_DEVICE_NAME || process.env.DEVICE_NAME || 'uno-main';
+
+const NANO_PORT = process.env.NANO_SERIAL_PORT || '';
+const NANO_BAUDRATE = Number(process.env.NANO_SERIAL_BAUDRATE || 115200);
+const NANO_DEVICE_NAME = process.env.NANO_DEVICE_NAME || 'nano-main';
 
 if (typeof fetch !== 'function') {
   console.error('[Bridge] Node 18+ is required because global fetch is not available.');
   process.exit(1);
 }
 
-const port = new SerialPort({
-  path: SERIAL_PORT,
-  baudRate: SERIAL_BAUDRATE,
-});
-
-const parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
-let commandPollTimer = null;
+let unoPort = null;
+let nanoPort = null;
+let unoPollTimer = null;
 
 async function postJson(path, payload) {
   const response = await fetch(`${SERVER_BASE}${path}`, {
@@ -47,29 +48,39 @@ async function getJson(path) {
   return response.json();
 }
 
-async function handleIncomingLine(rawLine) {
-  const line = rawLine.trim();
-  if (!line) return;
-
-  let payload;
-  try {
-    payload = JSON.parse(line);
-  } catch (error) {
-    console.warn('[Bridge] Invalid JSON from Arduino:', line);
-    return;
-  }
-
+async function forwardPayload(payload, portLabel) {
   try {
     await postJson('/api/sensors/events', payload);
-    console.log('[Bridge] forwarded sensor payload:', payload.kind || 'unknown');
+    console.log(`[Bridge:${portLabel}] forwarded sensor payload:`, payload.kind || 'unknown');
   } catch (error) {
-    console.error('[Bridge] failed to forward sensor payload:', error.message);
+    console.error(`[Bridge:${portLabel}] failed to forward sensor payload:`, error.message);
   }
 }
 
-async function pollCommands() {
+function attachParser(port, portLabel) {
+  const parser = port.pipe(new ReadlineParser({ delimiter: '\n' }));
+
+  parser.on('data', (rawLine) => {
+    const line = rawLine.trim();
+    if (!line) return;
+
+    let payload;
+    try {
+      payload = JSON.parse(line);
+    } catch (error) {
+      console.warn(`[Bridge:${portLabel}] invalid JSON:`, line);
+      return;
+    }
+
+    void forwardPayload(payload, portLabel);
+  });
+}
+
+async function pollUnoCommands() {
+  if (!unoPort || !unoPort.isOpen) return;
+
   try {
-    const commands = await getJson(`/api/device/commands/pending?device=${encodeURIComponent(DEVICE_NAME)}`);
+    const commands = await getJson(`/api/device/commands/pending?device=${encodeURIComponent(UNO_DEVICE_NAME)}`);
     if (!Array.isArray(commands) || commands.length === 0) return;
 
     for (const command of commands) {
@@ -82,38 +93,59 @@ async function pollCommands() {
       };
 
       await new Promise((resolve, reject) => {
-        port.write(`${JSON.stringify(serialPayload)}\n`, (error) => {
+        unoPort.write(`${JSON.stringify(serialPayload)}\n`, (error) => {
           if (error) {
             reject(error);
             return;
           }
-          port.drain((drainError) => (drainError ? reject(drainError) : resolve()));
+          unoPort.drain((drainError) => (drainError ? reject(drainError) : resolve()));
         });
       });
 
       await postJson(`/api/device/commands/${command.id}/ack`, { bridge_id: BRIDGE_ID });
-      console.log('[Bridge] command sent to Arduino:', command.cmd, command.worker || '');
+      console.log('[Bridge:uno] command sent to Arduino:', command.cmd, command.worker || '');
     }
   } catch (error) {
-    console.error('[Bridge] failed to poll/send commands:', error.message);
+    console.error('[Bridge:uno] failed to poll/send commands:', error.message);
   }
 }
 
-port.on('open', () => {
-  console.log(`[Bridge] serial port opened: ${SERIAL_PORT} @ ${SERIAL_BAUDRATE}`);
-  commandPollTimer = setInterval(pollCommands, COMMAND_POLL_MS);
-});
+function openPort(path, baudRate, label) {
+  if (!path) return null;
 
-port.on('error', (error) => {
-  console.error('[Bridge] serial port error:', error.message);
-});
+  const port = new SerialPort({ path, baudRate });
+  port.on('open', () => {
+    console.log(`[Bridge:${label}] serial port opened: ${path} @ ${baudRate}`);
+  });
+  port.on('error', (error) => {
+    console.error(`[Bridge:${label}] serial port error:`, error.message);
+  });
+  attachParser(port, label);
+  return port;
+}
 
-parser.on('data', (line) => {
-  void handleIncomingLine(line);
-});
+unoPort = openPort(UNO_PORT, UNO_BAUDRATE, 'uno');
+nanoPort = openPort(NANO_PORT, NANO_BAUDRATE, 'nano');
+
+if (unoPort) {
+  unoPollTimer = setInterval(pollUnoCommands, COMMAND_POLL_MS);
+}
 
 process.on('SIGINT', () => {
-  if (commandPollTimer) clearInterval(commandPollTimer);
+  if (unoPollTimer) clearInterval(unoPollTimer);
   console.log('\n[Bridge] shutting down...');
-  port.close(() => process.exit(0));
+
+  const ports = [unoPort, nanoPort].filter(Boolean);
+  if (ports.length === 0) {
+    process.exit(0);
+    return;
+  }
+
+  let closedCount = 0;
+  ports.forEach((port) => {
+    port.close(() => {
+      closedCount += 1;
+      if (closedCount === ports.length) process.exit(0);
+    });
+  });
 });
