@@ -9,7 +9,7 @@ const unsigned long EVENT_COOLDOWN_MS = 2500;
 
 const float FALL_TILT_THRESHOLD_DEG = 55.0f;
 const int NOISE_CAUTION_SCORE = 40;
-const int NOISE_DANGER_SCORE = 70;
+const int NOISE_DANGER_SCORE = 40;
 
 unsigned long lastStatusAt = 0;
 unsigned long lastTiltEventAt = 0;
@@ -140,6 +140,7 @@ void loop() {
 
   delay(30);
 }
+
 
 
 
