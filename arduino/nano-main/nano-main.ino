@@ -35,7 +35,8 @@ bool smoothingInitialized = false;
 int rawToNoiseScore(int rawValue) {
   const int clamped = constrain(rawValue, 0, 1023);
   const float normalized = clamped / 1023.0f;
-  const float scaled = 30.0f + powf(normalized, 0.65f) * 70.0f;
+  const float rawScore = 1.0f + powf(normalized, 0.58f) * 69.0f;
+  const float scaled = 30.0f + rawScore;
   return constrain((int)(scaled + 0.5f), 30, 100);
 }
 
@@ -177,3 +178,4 @@ void loop() {
 
   delay(30);
 }
+
