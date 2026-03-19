@@ -15,7 +15,7 @@ const int LED_B_PIN = 8;
 const int HEART_ALERT_THRESHOLD = 700;
 const unsigned long STATUS_INTERVAL_MS = 1000;
 const unsigned long CALL_OUTPUT_MS = 1000;
-const unsigned long DISPLAY_ROTATE_MS = 1800;
+const unsigned long FALL_OVERLAY_MS = 5000;
 
 char serialLine[128];
 size_t serialLineLen = 0;
@@ -30,12 +30,11 @@ bool buttonPressedA = false;
 bool buttonPressedB = false;
 bool callActiveA = false;
 bool callActiveB = false;
-bool displayHeartPage = true;
 
 unsigned long lastStatusAt = 0;
-unsigned long displaySwapAt = 0;
 unsigned long callOutputUntilA = 0;
 unsigned long callOutputUntilB = 0;
+unsigned long fallOverlayUntil = 0;
 
 void applyOutputs() {
   digitalWrite(LED_A_PIN, ledStateA ? HIGH : LOW);
@@ -59,21 +58,6 @@ void showHeartDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool f
   } while (u8g2.nextPage());
 }
 
-void showCallDisplay() {
-  char lineA[28];
-  char lineB[28];
-
-  u8g2.firstPage();
-  do {
-    u8g2.setFont(u8g2_font_6x12_tr);
-    u8g2.drawStr(0, 12, "CALL / BUTTON");
-    snprintf(lineA, sizeof(lineA), "RED BTN:%s CALL:%s", buttonPressedA ? "ON" : "OFF", callActiveA ? "ON" : "OFF");
-    snprintf(lineB, sizeof(lineB), "GRN BTN:%s CALL:%s", buttonPressedB ? "ON" : "OFF", callActiveB ? "ON" : "OFF");
-    u8g2.drawStr(0, 32, lineA);
-    u8g2.drawStr(0, 52, lineB);
-  } while (u8g2.nextPage());
-}
-
 void showCallOverlay(const char* workerLabel) {
   u8g2.firstPage();
   do {
@@ -84,7 +68,21 @@ void showCallOverlay(const char* workerLabel) {
   } while (u8g2.nextPage());
 }
 
+void showFallOverlay() {
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_6x12_tr);
+    u8g2.drawStr(0, 14, "EMERGENCY");
+    u8g2.setFont(u8g2_font_logisoso18_tr);
+    u8g2.drawStr(6, 46, "FALL DETECT");
+  } while (u8g2.nextPage());
+}
+
 void refreshDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool fingerDetectedB) {
+  if (millis() < fallOverlayUntil) {
+    showFallOverlay();
+    return;
+  }
   if (callActiveA) {
     showCallOverlay("RED");
     return;
@@ -93,11 +91,7 @@ void refreshDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool fin
     showCallOverlay("GREEN");
     return;
   }
-  if (displayHeartPage) {
-    showHeartDisplay(heartRawA, fingerDetectedA, heartRawB, fingerDetectedB);
-  } else {
-    showCallDisplay();
-  }
+  showHeartDisplay(heartRawA, fingerDetectedA, heartRawB, fingerDetectedB);
 }
 
 void emitStatus(int heartRawA, bool fingerDetectedA, int heartRawB, bool fingerDetectedB) {
@@ -118,6 +112,8 @@ void emitStatus(int heartRawA, bool fingerDetectedA, int heartRawB, bool fingerD
   Serial.print(callActiveA ? "true" : "false");
   Serial.print(",\"callActiveB\":");
   Serial.print(callActiveB ? "true" : "false");
+  Serial.print(",\"fallOverlayActive\":");
+  Serial.print(millis() < fallOverlayUntil ? "true" : "false");
   Serial.println("}");
 }
 
@@ -188,6 +184,10 @@ void applyWorkerCall(const char* worker) {
   setWorkerCallState(worker, true);
 }
 
+void triggerFallOverlay() {
+  fallOverlayUntil = millis() + FALL_OVERLAY_MS;
+}
+
 void handleCommand(const char* line) {
   if (containsToken(line, "\"cmd\":\"call_worker\"")) {
     if (containsToken(line, "\"worker\":\"B\"")) {
@@ -197,6 +197,12 @@ void handleCommand(const char* line) {
       applyWorkerCall("A");
       emitCommandApplied("call_worker", "A");
     }
+    return;
+  }
+
+  if (containsToken(line, "\"cmd\":\"show_fall\"")) {
+    triggerFallOverlay();
+    emitCommandApplied("show_fall", NULL);
     return;
   }
 
@@ -263,11 +269,6 @@ void loop() {
   bool fingerDetectedA = heartRawA > 500;
   bool fingerDetectedB = heartRawB > 500;
 
-  if (millis() - displaySwapAt >= DISPLAY_ROTATE_MS) {
-    displaySwapAt = millis();
-    displayHeartPage = !displayHeartPage;
-  }
-
   refreshDisplay(heartRawA, fingerDetectedA, heartRawB, fingerDetectedB);
 
   bool nextHeartAlertA = fingerDetectedA && heartRawA >= HEART_ALERT_THRESHOLD;
@@ -315,6 +316,3 @@ void loop() {
 
   delay(30);
 }
-
-
-
