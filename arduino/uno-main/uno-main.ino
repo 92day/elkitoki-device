@@ -16,9 +16,11 @@ const int HEART_ALERT_THRESHOLD = 700;
 const unsigned long STATUS_INTERVAL_MS = 1000;
 const unsigned long CALL_OUTPUT_MS = 1000;
 const unsigned long FALL_OVERLAY_MS = 5000;
+const unsigned long NOISE_OVERLAY_MS = 4000;
 
 char serialLine[128];
 size_t serialLineLen = 0;
+char noiseOverlayZone[8] = "A";
 
 bool ledStateA = false;
 bool ledStateB = false;
@@ -35,6 +37,7 @@ unsigned long lastStatusAt = 0;
 unsigned long callOutputUntilA = 0;
 unsigned long callOutputUntilB = 0;
 unsigned long fallOverlayUntil = 0;
+unsigned long noiseOverlayUntil = 0;
 
 void applyOutputs() {
   digitalWrite(LED_A_PIN, ledStateA ? HIGH : LOW);
@@ -78,9 +81,23 @@ void showFallOverlay() {
   } while (u8g2.nextPage());
 }
 
+void showNoiseOverlay(const char* zoneLabel) {
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_6x12_tr);
+    u8g2.drawStr(0, 14, "NOISE ALERT");
+    u8g2.setFont(u8g2_font_logisoso18_tr);
+    u8g2.drawStr(6, 46, zoneLabel);
+  } while (u8g2.nextPage());
+}
+
 void refreshDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool fingerDetectedB) {
   if (millis() < fallOverlayUntil) {
     showFallOverlay();
+    return;
+  }
+  if (millis() < noiseOverlayUntil) {
+    showNoiseOverlay(noiseOverlayZone);
     return;
   }
   if (callActiveA) {
@@ -114,6 +131,8 @@ void emitStatus(int heartRawA, bool fingerDetectedA, int heartRawB, bool fingerD
   Serial.print(callActiveB ? "true" : "false");
   Serial.print(",\"fallOverlayActive\":");
   Serial.print(millis() < fallOverlayUntil ? "true" : "false");
+  Serial.print(",\"noiseOverlayActive\":");
+  Serial.print(millis() < noiseOverlayUntil ? "true" : "false");
   Serial.println("}");
 }
 
@@ -188,6 +207,11 @@ void triggerFallOverlay() {
   fallOverlayUntil = millis() + FALL_OVERLAY_MS;
 }
 
+void triggerNoiseOverlay(const char* zone) {
+  snprintf(noiseOverlayZone, sizeof(noiseOverlayZone), "ZONE %s", zone);
+  noiseOverlayUntil = millis() + NOISE_OVERLAY_MS;
+}
+
 void handleCommand(const char* line) {
   if (containsToken(line, "\"cmd\":\"call_worker\"")) {
     if (containsToken(line, "\"worker\":\"B\"")) {
@@ -203,6 +227,18 @@ void handleCommand(const char* line) {
   if (containsToken(line, "\"cmd\":\"show_fall\"")) {
     triggerFallOverlay();
     emitCommandApplied("show_fall", NULL);
+    return;
+  }
+
+  if (containsToken(line, "\"cmd\":\"show_noise\"")) {
+    if (containsToken(line, "\"zone\":\"B\"")) {
+      triggerNoiseOverlay("B");
+    } else if (containsToken(line, "\"zone\":\"C\"")) {
+      triggerNoiseOverlay("C");
+    } else {
+      triggerNoiseOverlay("A");
+    }
+    emitCommandApplied("show_noise", NULL);
     return;
   }
 
