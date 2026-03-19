@@ -52,45 +52,45 @@ void showHeartDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool f
   do {
     u8g2.setFont(u8g2_font_6x12_tr);
     u8g2.drawStr(0, 12, "HEART STATUS");
-    snprintf(lineA, sizeof(lineA), "A %4d %s", fingerDetectedA ? heartRawA : 0, fingerDetectedA ? "OK" : "--");
-    snprintf(lineB, sizeof(lineB), "B %4d %s", fingerDetectedB ? heartRawB : 0, fingerDetectedB ? "OK" : "--");
+    snprintf(lineA, sizeof(lineA), "RED %3d %s", fingerDetectedA ? heartRawA : 0, fingerDetectedA ? "OK" : "--");
+    snprintf(lineB, sizeof(lineB), "GREEN %3d %s", fingerDetectedB ? heartRawB : 0, fingerDetectedB ? "OK" : "--");
     u8g2.drawStr(0, 32, lineA);
     u8g2.drawStr(0, 52, lineB);
   } while (u8g2.nextPage());
 }
 
 void showCallDisplay() {
-  char lineA[24];
-  char lineB[24];
+  char lineA[28];
+  char lineB[28];
 
   u8g2.firstPage();
   do {
     u8g2.setFont(u8g2_font_6x12_tr);
     u8g2.drawStr(0, 12, "CALL / BUTTON");
-    snprintf(lineA, sizeof(lineA), "A BTN:%s CALL:%s", buttonPressedA ? "ON" : "OFF", callActiveA ? "ON" : "OFF");
-    snprintf(lineB, sizeof(lineB), "B BTN:%s CALL:%s", buttonPressedB ? "ON" : "OFF", callActiveB ? "ON" : "OFF");
+    snprintf(lineA, sizeof(lineA), "RED BTN:%s CALL:%s", buttonPressedA ? "ON" : "OFF", callActiveA ? "ON" : "OFF");
+    snprintf(lineB, sizeof(lineB), "GRN BTN:%s CALL:%s", buttonPressedB ? "ON" : "OFF", callActiveB ? "ON" : "OFF");
     u8g2.drawStr(0, 32, lineA);
     u8g2.drawStr(0, 52, lineB);
   } while (u8g2.nextPage());
 }
 
-void showCallOverlay(const char* worker) {
+void showCallOverlay(const char* workerLabel) {
   u8g2.firstPage();
   do {
     u8g2.setFont(u8g2_font_6x12_tr);
     u8g2.drawStr(0, 14, "WORKER CALL");
-    u8g2.setFont(u8g2_font_logisoso24_tr);
-    u8g2.drawStr(16, 52, worker);
+    u8g2.setFont(u8g2_font_logisoso18_tr);
+    u8g2.drawStr(4, 46, workerLabel);
   } while (u8g2.nextPage());
 }
 
 void refreshDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool fingerDetectedB) {
   if (callActiveA) {
-    showCallOverlay("A");
+    showCallOverlay("RED");
     return;
   }
   if (callActiveB) {
-    showCallOverlay("B");
+    showCallOverlay("GREEN");
     return;
   }
   if (displayHeartPage) {
@@ -315,4 +315,6 @@ void loop() {
 
   delay(30);
 }
+
+
 

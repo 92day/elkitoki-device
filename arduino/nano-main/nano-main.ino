@@ -8,9 +8,9 @@ const unsigned long STATUS_INTERVAL_MS = 500;
 const unsigned long EVENT_COOLDOWN_MS = 8000;
 
 const float FALL_TILT_THRESHOLD_DEG = 55.0f;
-const int NOISE_CAUTION_SCORE = 40;
-const int NOISE_DANGER_SCORE = 40;
-const int NOISE_RESET_SCORE = 34;
+const int NOISE_CAUTION_SCORE = 50;
+const int NOISE_DANGER_SCORE = 50;
+const int NOISE_RESET_SCORE = 44;
 const float SOUND_SMOOTHING_ALPHA = 0.2f;
 
 unsigned long lastStatusAt = 0;
@@ -178,4 +178,5 @@ void loop() {
 
   delay(30);
 }
+
 
