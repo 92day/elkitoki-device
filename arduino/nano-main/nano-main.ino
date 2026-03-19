@@ -5,12 +5,12 @@ const int SOUND_B_PIN = A1;
 const int SOUND_C_PIN = A2;
 
 const unsigned long STATUS_INTERVAL_MS = 500;
-const unsigned long EVENT_COOLDOWN_MS = 8000;
+const unsigned long EVENT_COOLDOWN_MS = 20000;
 
 const float FALL_TILT_THRESHOLD_DEG = 55.0f;
-const int NOISE_CAUTION_SCORE = 50;
-const int NOISE_DANGER_SCORE = 50;
-const int NOISE_RESET_SCORE = 44;
+const int NOISE_CAUTION_SCORE = 60;
+const int NOISE_DANGER_SCORE = 60;
+const int NOISE_RESET_SCORE = 54;
 const float SOUND_SMOOTHING_ALPHA = 0.2f;
 
 unsigned long lastStatusAt = 0;
@@ -178,5 +178,6 @@ void loop() {
 
   delay(30);
 }
+
 
 
