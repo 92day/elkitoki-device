@@ -1,0 +1,4 @@
+﻿serial-bridge/node_modules/
+serial-bridge/.env
+arduino/libraries/
+*.tmp
