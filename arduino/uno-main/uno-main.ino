@@ -1,4 +1,4 @@
-﻿#include <Wire.h>
+#include <Wire.h>
 #include <U8g2lib.h>
 
 U8G2_SSD1309_128X64_NONAME0_1_HW_I2C u8g2(U8G2_R0, /* reset=*/ 9);
@@ -17,6 +17,18 @@ const unsigned long STATUS_INTERVAL_MS = 1000;
 const unsigned long CALL_OUTPUT_MS = 1000;
 const unsigned long FALL_OVERLAY_MS = 5000;
 const unsigned long NOISE_OVERLAY_MS = 4000;
+const unsigned long HEART_WINDOW_MS = 700;
+const int HEART_FINGER_DETECT_AMPLITUDE = 12;
+const int HEART_FINGER_RELEASE_AMPLITUDE = 7;
+
+struct HeartChannelState {
+  int smoothRaw;
+  int windowMin;
+  int windowMax;
+  int lastAmplitude;
+  unsigned long windowStartedAt;
+  bool initialized;
+};
 
 char serialLine[128];
 size_t serialLineLen = 0;
@@ -32,12 +44,17 @@ bool buttonPressedA = false;
 bool buttonPressedB = false;
 bool callActiveA = false;
 bool callActiveB = false;
+bool fingerDetectedStateA = false;
+bool fingerDetectedStateB = false;
 
 unsigned long lastStatusAt = 0;
 unsigned long callOutputUntilA = 0;
 unsigned long callOutputUntilB = 0;
 unsigned long fallOverlayUntil = 0;
 unsigned long noiseOverlayUntil = 0;
+
+HeartChannelState heartStateA = {0, 1023, 0, 0, 0, false};
+HeartChannelState heartStateB = {0, 1023, 0, 0, 0, false};
 
 void applyOutputs() {
   digitalWrite(LED_A_PIN, ledStateA ? HIGH : LOW);
@@ -124,6 +141,48 @@ void refreshDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool fin
     return;
   }
   showReadyDisplay();
+}
+
+int updateHeartChannel(HeartChannelState &state, int rawValue, unsigned long now) {
+  if (!state.initialized) {
+    state.smoothRaw = rawValue;
+    state.windowMin = rawValue;
+    state.windowMax = rawValue;
+    state.lastAmplitude = 0;
+    state.windowStartedAt = now;
+    state.initialized = true;
+    return state.smoothRaw;
+  }
+
+  state.smoothRaw = (state.smoothRaw * 3 + rawValue) / 4;
+
+  if (state.smoothRaw < state.windowMin) {
+    state.windowMin = state.smoothRaw;
+  }
+  if (state.smoothRaw > state.windowMax) {
+    state.windowMax = state.smoothRaw;
+  }
+
+  if (now - state.windowStartedAt >= HEART_WINDOW_MS) {
+    state.lastAmplitude = state.windowMax - state.windowMin;
+    state.windowMin = state.smoothRaw;
+    state.windowMax = state.smoothRaw;
+    state.windowStartedAt = now;
+  }
+
+  return state.smoothRaw;
+}
+
+bool detectFinger(const HeartChannelState &state, bool currentlyDetected) {
+  if (!state.initialized) {
+    return false;
+  }
+
+  if (currentlyDetected) {
+    return state.lastAmplitude >= HEART_FINGER_RELEASE_AMPLITUDE;
+  }
+
+  return state.lastAmplitude >= HEART_FINGER_DETECT_AMPLITUDE;
 }
 
 void emitStatus(int heartRawA, bool fingerDetectedA, int heartRawB, bool fingerDetectedB) {
@@ -315,10 +374,13 @@ void setup() {
 void loop() {
   readSerialCommands();
 
-  int heartRawA = analogRead(HEART_A_PIN);
-  int heartRawB = analogRead(HEART_B_PIN);
-  bool fingerDetectedA = heartRawA > 500;
-  bool fingerDetectedB = heartRawB > 500;
+  unsigned long now = millis();
+  int heartRawA = updateHeartChannel(heartStateA, analogRead(HEART_A_PIN), now);
+  int heartRawB = updateHeartChannel(heartStateB, analogRead(HEART_B_PIN), now);
+  fingerDetectedStateA = detectFinger(heartStateA, fingerDetectedStateA);
+  fingerDetectedStateB = detectFinger(heartStateB, fingerDetectedStateB);
+  bool fingerDetectedA = fingerDetectedStateA;
+  bool fingerDetectedB = fingerDetectedStateB;
 
   refreshDisplay(heartRawA, fingerDetectedA, heartRawB, fingerDetectedB);
 
@@ -367,6 +429,8 @@ void loop() {
 
   delay(30);
 }
+
+
 
 
 
