@@ -61,6 +61,17 @@ void showHeartDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool f
   } while (u8g2.nextPage());
 }
 
+void showReadyDisplay() {
+  const char* text = "L-kitoki";
+  u8g2.firstPage();
+  do {
+    u8g2.setFont(u8g2_font_logisoso18_tr);
+    int16_t width = u8g2.getStrWidth(text);
+    int16_t x = (128 - width) / 2;
+    u8g2.drawStr(x < 0 ? 0 : x, 40, text);
+  } while (u8g2.nextPage());
+}
+
 void showCallOverlay(const char* workerLabel) {
   u8g2.firstPage();
   do {
@@ -108,7 +119,11 @@ void refreshDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool fin
     showCallOverlay("GREEN");
     return;
   }
-  showHeartDisplay(heartRawA, fingerDetectedA, heartRawB, fingerDetectedB);
+  if (fingerDetectedA || fingerDetectedB) {
+    showHeartDisplay(heartRawA, fingerDetectedA, heartRawB, fingerDetectedB);
+    return;
+  }
+  showReadyDisplay();
 }
 
 void emitStatus(int heartRawA, bool fingerDetectedA, int heartRawB, bool fingerDetectedB) {
@@ -352,3 +367,6 @@ void loop() {
 
   delay(30);
 }
+
+
+
