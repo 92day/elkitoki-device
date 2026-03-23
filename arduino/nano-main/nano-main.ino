@@ -1,11 +1,12 @@
-﻿#include <Arduino_LSM9DS1.h>
+#include <Arduino_LSM9DS1.h>
 
 const int SOUND_A_PIN = A0;
 const int SOUND_B_PIN = A1;
 const int SOUND_C_PIN = A2;
 
 const unsigned long STATUS_INTERVAL_MS = 500;
-const unsigned long EVENT_COOLDOWN_MS = 20000;
+const unsigned long FALL_EVENT_COOLDOWN_MS = 10000;
+const unsigned long NOISE_EVENT_COOLDOWN_MS = 20000;
 
 const float FALL_TILT_THRESHOLD_DEG = 55.0f;
 const int NOISE_CAUTION_SCORE = 55;
@@ -98,19 +99,19 @@ void updateNoiseAlerts(int soundA, int soundB, int soundC) {
     noiseEventLatchedC = false;
   }
 
-  if (soundA >= NOISE_DANGER_SCORE && !noiseEventLatchedA && now - lastNoiseEventAtA >= EVENT_COOLDOWN_MS) {
+  if (soundA >= NOISE_DANGER_SCORE && !noiseEventLatchedA && now - lastNoiseEventAtA >= NOISE_EVENT_COOLDOWN_MS) {
     emitNoiseEvent("A", soundA);
     lastNoiseEventAtA = now;
     noiseEventLatchedA = true;
   }
 
-  if (soundB >= NOISE_DANGER_SCORE && !noiseEventLatchedB && now - lastNoiseEventAtB >= EVENT_COOLDOWN_MS) {
+  if (soundB >= NOISE_DANGER_SCORE && !noiseEventLatchedB && now - lastNoiseEventAtB >= NOISE_EVENT_COOLDOWN_MS) {
     emitNoiseEvent("B", soundB);
     lastNoiseEventAtB = now;
     noiseEventLatchedB = true;
   }
 
-  if (soundC >= NOISE_DANGER_SCORE && !noiseEventLatchedC && now - lastNoiseEventAtC >= EVENT_COOLDOWN_MS) {
+  if (soundC >= NOISE_DANGER_SCORE && !noiseEventLatchedC && now - lastNoiseEventAtC >= NOISE_EVENT_COOLDOWN_MS) {
     emitNoiseEvent("C", soundC);
     lastNoiseEventAtC = now;
     noiseEventLatchedC = true;
@@ -121,7 +122,7 @@ void updateTiltAlert(float pitch, float roll) {
   const unsigned long now = millis();
   const bool nextFallActive = abs(pitch) >= FALL_TILT_THRESHOLD_DEG || abs(roll) >= FALL_TILT_THRESHOLD_DEG;
 
-  if (nextFallActive && !fallActive && now - lastTiltEventAt >= EVENT_COOLDOWN_MS) {
+  if (nextFallActive && !fallActive && now - lastTiltEventAt >= FALL_EVENT_COOLDOWN_MS) {
     emitFallEvent(pitch, roll);
     lastTiltEventAt = now;
   }
@@ -178,6 +179,8 @@ void loop() {
 
   delay(30);
 }
+
+
 
 
 
