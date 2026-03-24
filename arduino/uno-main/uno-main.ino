@@ -89,8 +89,9 @@ void showFallOverlay() {
   do {
     u8g2.setFont(u8g2_font_6x12_tr);
     u8g2.drawStr(0, 14, "EMERGENCY");
-    u8g2.setFont(u8g2_font_logisoso18_tr);
-    u8g2.drawStr(6, 46, "FALL DETECT");
+    u8g2.setFont(u8g2_font_logisoso16_tr);
+    u8g2.drawStr(10, 44, "FALL");
+    u8g2.drawStr(10, 62, "DETECT");
   } while (u8g2.nextPage());
 }
 
