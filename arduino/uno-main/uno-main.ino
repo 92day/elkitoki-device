@@ -18,8 +18,6 @@ const unsigned long CALL_OUTPUT_MS = 1000;
 const unsigned long FALL_OVERLAY_MS = 5000;
 const unsigned long NOISE_OVERLAY_MS = 4000;
 const unsigned long HEART_WINDOW_MS = 700;
-const unsigned long HEART_DISPLAY_CYCLE_MS = 10000;
-const unsigned long HEART_DISPLAY_DURATION_MS = 3000;
 const int HEART_FINGER_DETECT_AMPLITUDE = 12;
 const int HEART_FINGER_RELEASE_AMPLITUDE = 7;
 
@@ -65,21 +63,6 @@ void applyOutputs() {
   digitalWrite(MOTOR_B_PIN, motorStateB ? HIGH : LOW);
 }
 
-void showHeartDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool fingerDetectedB) {
-  char lineA[28];
-  char lineB[28];
-
-  u8g2.firstPage();
-  do {
-    u8g2.setFont(u8g2_font_6x12_tr);
-    u8g2.drawStr(0, 12, "HEART STATUS");
-    snprintf(lineA, sizeof(lineA), "RED %3d %s", heartRawA, fingerDetectedA ? "OK" : "--");
-    snprintf(lineB, sizeof(lineB), "GREEN %3d %s", heartRawB, fingerDetectedB ? "OK" : "--");
-    u8g2.drawStr(0, 32, lineA);
-    u8g2.drawStr(0, 52, lineB);
-  } while (u8g2.nextPage());
-}
-
 void showReadyDisplay() {
   const char* text = "L-kitoki";
   u8g2.firstPage();
@@ -121,10 +104,6 @@ void showNoiseOverlay(const char* zoneLabel) {
   } while (u8g2.nextPage());
 }
 
-bool shouldShowHeartWindow(unsigned long now) {
-  return (now % HEART_DISPLAY_CYCLE_MS) < HEART_DISPLAY_DURATION_MS;
-}
-
 void refreshDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool fingerDetectedB) {
   unsigned long now = millis();
 
@@ -142,10 +121,6 @@ void refreshDisplay(int heartRawA, bool fingerDetectedA, int heartRawB, bool fin
   }
   if (callActiveB) {
     showCallOverlay("GREEN");
-    return;
-  }
-  if (shouldShowHeartWindow(now)) {
-    showHeartDisplay(heartRawA, fingerDetectedA, heartRawB, fingerDetectedB);
     return;
   }
   showReadyDisplay();
